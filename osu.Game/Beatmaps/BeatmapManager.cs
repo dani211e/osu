@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using osu.Framework.Audio;
 using osu.Framework.Audio.Track;
 using osu.Framework.Extensions;
+using osu.Framework.Extensions.ObjectExtensions;
 using osu.Framework.IO.Stores;
 using osu.Framework.Platform;
 using osu.Game.Beatmaps.ControlPoints;
@@ -326,6 +327,15 @@ namespace osu.Game.Beatmaps
             });
         }
 
+        public void DeleteAllUnusedFiles()
+        {
+            Realm.Write(r =>
+            {
+                var items = r.All<BeatmapSetInfo>().Where(s => !s.DeletePending && !s.Protected);
+                DeleteAllUnnecessaryFiles(items.ToList());
+            });
+        }
+
         public void ResetAllOffsets()
         {
             const string reset_complete_message = "All offsets have been reset!";
@@ -437,6 +447,69 @@ namespace osu.Game.Beatmaps
             notification.State = ProgressNotificationState.Completed;
         }
 
+        /// <summary>
+        /// Delete all unnecessary files from a list of beatmaps.
+        /// This will post notifications tracking progress.
+        /// </summary>
+        public void DeleteAllUnnecessaryFiles(List<BeatmapSetInfo> items, bool silent = false)
+        {
+            const string no_videos_message = "No unnecessary files found to delete!";
+
+            if (items.Count == 0)
+            {
+                if (!silent)
+                    PostNotification?.Invoke(new ProgressCompletionNotification { Text = no_videos_message });
+                return;
+            }
+
+            var notification = new ProgressNotification
+            {
+                Progress = 0,
+                Text = $"Preparing to delete all unnecessary files...",
+                CompletionText = no_videos_message,
+                State = ProgressNotificationState.Active,
+            };
+
+            if (!silent)
+                PostNotification?.Invoke(notification);
+
+            int i = 0;
+            int deleted = 0;
+
+            foreach (var b in items)
+            {
+                if (notification.State == ProgressNotificationState.Cancelled)
+                    // user requested abort
+                    return;
+
+                var filesToKeep = new List<string>();
+                foreach (var file in b.Beatmaps)
+                {
+                    filesToKeep.Add(file.Metadata.BackgroundFile);
+                    filesToKeep.Add(file.Metadata.AudioFile);
+                    if (!file.File.IsNull())
+                        filesToKeep.Add(file.File.Filename);
+                }
+
+                filesToKeep = filesToKeep.Distinct().ToList();
+
+                foreach (var file in b.Files)
+                {
+                    if (!filesToKeep.Contains(file.Filename))
+                    {
+                        deleted++;
+                        notification.CompletionText = $"Deleted {deleted} {HumanisedModelName} files(s)!";
+                        DeleteFile(b, file);
+                    }
+                }
+
+                notification.Text = $"Deleting unnecessary files from {HumanisedModelName}s ({deleted} deleted)";
+
+                notification.Progress = (float)++i / items.Count;
+            }
+
+            notification.State = ProgressNotificationState.Completed;
+        }
         public void UndeleteAll()
         {
             Realm.Run(r => Undelete(r.All<BeatmapSetInfo>().Where(s => s.DeletePending).ToList()));

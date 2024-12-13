@@ -16,6 +16,7 @@ namespace osu.Game.Overlays.Settings.Sections.Maintenance
 
         private SettingsButton deleteBeatmapsButton = null!;
         private SettingsButton deleteBeatmapVideosButton = null!;
+        private SettingsButton deleteUnnecessaryFilesButton = null!;
         private SettingsButton resetOffsetsButton = null!;
         private SettingsButton restoreButton = null!;
         private SettingsButton undeleteButton = null!;
@@ -45,6 +46,19 @@ namespace osu.Game.Overlays.Settings.Sections.Maintenance
                     {
                         deleteBeatmapVideosButton.Enabled.Value = false;
                         Task.Run(beatmaps.DeleteAllVideos).ContinueWith(_ => Schedule(() => deleteBeatmapVideosButton.Enabled.Value = true));
+                    }, DeleteConfirmationContentStrings.BeatmapVideos));
+                }
+            });
+
+            Add(deleteUnnecessaryFilesButton = new DangerousSettingsButton
+            {
+                Text = MaintenanceSettingsStrings.DeleteAllUnnecessaryFiles,
+                Action = () =>
+                {
+                    dialogOverlay?.Push(new MassDeleteConfirmationDialog(() =>
+                    {
+                        deleteUnnecessaryFilesButton.Enabled.Value = false;
+                        Task.Run(beatmaps.DeleteAllUnusedFiles).ContinueWith(_ => Schedule(() => deleteUnnecessaryFilesButton.Enabled.Value = true));
                     }, DeleteConfirmationContentStrings.BeatmapVideos));
                 }
             });

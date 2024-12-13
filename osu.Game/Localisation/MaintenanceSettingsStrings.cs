@@ -60,6 +60,11 @@ namespace osu.Game.Localisation
         public static LocalisableString DeleteAllBeatmapVideos => new TranslatableString(getKey(@"delete_all_beatmap_videos"), @"Delete ALL beatmap videos");
 
         /// <summary>
+        /// "Delete ALL but the strictly necessary files"
+        /// </summary>
+        public static LocalisableString DeleteAllUnnecessaryFiles => new TranslatableString(getKey(@"delete_all_unnecessary_files"), @"Delete ALL but the strictly necessary files");
+
+        /// <summary>
         /// "Reset ALL beatmap offsets"
         /// </summary>
         public static LocalisableString ResetAllOffsets => new TranslatableString(getKey(@"reset_all_offsets"), @"Reset ALL beatmap offsets");
