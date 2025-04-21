@@ -18,6 +18,7 @@ using osu.Framework.IO.Stores;
 using osu.Framework.Platform;
 using osu.Game.Beatmaps.ControlPoints;
 using osu.Game.Beatmaps.Formats;
+using osu.Game.Collections;
 using osu.Game.Database;
 using osu.Game.Extensions;
 using osu.Game.IO.Archives;
@@ -346,7 +347,9 @@ namespace osu.Game.Beatmaps
             Realm.Write(r =>
             {
                 var items = r.All<BeatmapSetInfo>().Where(s => !s.DeletePending && !s.Protected);
-                DeleteAllUnnecessaryFiles(items.ToList());
+                var collections = r.All<BeatmapCollection>().ToList();
+                var hashes = collections.SelectMany(x => x.BeatmapMD5Hashes).ToHashSet();
+                DeleteAllUnnecessaryFiles(items.ToList(), hashes);
             });
         }
 
@@ -404,8 +407,8 @@ namespace osu.Game.Beatmaps
                 r.Remove(beatmapInfo.Metadata);
                 r.Remove(beatmapInfo);
 
-                updateHashAndMarkDirty(setInfo);
-                workingBeatmapCache.Invalidate(setInfo);
+                //updateHashAndMarkDirty(setInfo);
+                //workingBeatmapCache.Invalidate(setInfo);
             });
         }
 
@@ -465,7 +468,7 @@ namespace osu.Game.Beatmaps
         /// Delete all unnecessary files from a list of beatmaps.
         /// This will post notifications tracking progress.
         /// </summary>
-        public void DeleteAllUnnecessaryFiles(List<BeatmapSetInfo> items, bool silent = false)
+        public void DeleteAllUnnecessaryFiles(List<BeatmapSetInfo> items, HashSet<string> hashes, bool silent = false)
         {
             const string no_videos_message = "No unnecessary files found to delete!";
 
@@ -490,31 +493,37 @@ namespace osu.Game.Beatmaps
             int i = 0;
             int deleted = 0;
 
-            foreach (var b in items)
+            foreach (var set in items)
             {
                 if (notification.State == ProgressNotificationState.Cancelled)
                     // user requested abort
                     return;
 
-                var filesToKeep = new List<string>();
-                foreach (var file in b.Beatmaps)
+                foreach (var map in set.Beatmaps)
                 {
-                    filesToKeep.Add(file.Metadata.BackgroundFile);
-                    filesToKeep.Add(file.Metadata.AudioFile);
-                    if (!file.File.IsNull())
-                        filesToKeep.Add(file.File.Filename);
+                    if (map.Scores.Any() || map.LastPlayed.IsNotNull() || hashes.Contains(map.MD5Hash))
+                        continue;
+
+                    //Delete only diffs under 6*
+                    if (map.StarRating >= 6 || map.StarRating == 0)
+                        continue;
+
+                    DeleteDifficultyImmediately(map);
+                    notification.CompletionText = $"Deleted {++deleted} {HumanisedModelName} files(s)!";
                 }
 
-                filesToKeep = filesToKeep.Distinct().ToList();
-
-                foreach (var file in b.Files)
+                //If no diffs remain, delete the set
+                if (set.Beatmaps.Count == 0)
                 {
-                    if (!filesToKeep.Contains(file.Filename))
+                    foreach (var file in set.Files)
                     {
-                        deleted++;
-                        notification.CompletionText = $"Deleted {deleted} {HumanisedModelName} files(s)!";
-                        DeleteFile(b, file);
+                        DeleteFile(set, file);
                     }
+
+                    Realm.Write(r =>
+                    {
+                        r.Remove(set);
+                    });
                 }
 
                 notification.Text = $"Deleting unnecessary files from {HumanisedModelName}s ({deleted} deleted)";
@@ -524,6 +533,7 @@ namespace osu.Game.Beatmaps
 
             notification.State = ProgressNotificationState.Completed;
         }
+
         public void UndeleteAll()
         {
             Realm.Run(r => Undelete(r.All<BeatmapSetInfo>().Where(s => s.DeletePending).ToList()));
